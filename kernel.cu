@@ -1,5 +1,6 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include "cutil_math.h"
 
 #include <stdio.h>
 #include <iostream>
@@ -23,20 +24,29 @@ __device__ Hit march()
 	return test;
 }
 
-__global__ void trace(int width, int height, float* result)
+__device__ float3 trace(float3 orig, float3 direction)
+{
+	Hit rayhit = march();
+	
+	float3 color = (rayhit.isHit) ? rayhit.color : make_float3(0, 0, 0);
+	return color;
+}
+
+__global__ void render(int width, int height, float* result)
 {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	if (x >= width || y >= height) return;
 
-	Hit rayhit = march();
-	
-	float3 color = (rayhit.isHit) ? rayhit.color : make_float3(0, 0, 0);
+	float3 color = trace(make_float3(0.0f, 0.0f, 0.0f), make_float3(0.0f, 0.0f, 0.0f));
 
 	result[x * 3 + 3 * y * width + 0] = color.x;
 	result[x * 3 + 3 * y * width + 1] = color.y;
 	result[x * 3 + 3 * y * width + 2] = color.z;
 }
+
+
+
 
 void saveImage(int width, int height, const float colors[]) 
 {
@@ -61,7 +71,7 @@ int main()
 	float *deviceImage;
 	cudaMalloc(&deviceImage, 3 * width * height * sizeof(float));
 
-	trace << <blocks, threads >> >(width, height, deviceImage);
+	render << <blocks, threads >> >(width, height, deviceImage);
 
 	float *hostImage = (float*) malloc(3 * width * height * sizeof(float));
 	cudaMemcpy(hostImage, deviceImage, 3 * width * height * sizeof(float), cudaMemcpyDeviceToHost);
