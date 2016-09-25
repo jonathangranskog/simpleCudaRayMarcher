@@ -1,0 +1,26 @@
+Debug/
+Release/
+*.vcxproj
+*.filters
+
+# Visual Studio Intellisense
+*.sdf
+*.db
+*.pdb
+
+
+# Visual Studio solution user options
+*.suo
+
+# Visual Studio user specific stuff
+*.user
+
+# Visual Studio temp file (only when VS open)
+*.opensdf
+*.opendb
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.ppm
