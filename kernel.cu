@@ -9,6 +9,7 @@
 
 #define BLOCK_SIZE 8
 #define EPS 1e-5
+#define PUSH 1e-2
 
 struct Hit 
 {
@@ -30,7 +31,12 @@ struct Camera
 
 float __host__ __device__ DE(float3 pos) 
 {
-	return sdfSphere(pos, 1.0f);
+	float mb = mandelbulb(pos / 2.3f, 8, 4, 8.0f) * 2.3f;
+	float sphere1 = sdfSphere(pos - make_float3(1.5f, 0.0f, 1.0f), 1.0f);
+	float sphere2 = sdfSphere(pos - make_float3(1.0, 3.0f, 1.0f), 1.0f);
+	float spheres = sdfUnion(sphere1, sphere2);
+	float plane = sdfPlane(pos - make_float3(0, -1.0f, 0), make_float3(0, 1, 0));
+	return sdfUnion(mb, sdfUnion(plane, spheres));
 }
 
 __device__ Hit march(float3 orig, float3 direction) 
@@ -44,7 +50,7 @@ __device__ Hit march(float3 orig, float3 direction)
 	while (totaldist < maxdist) 
 	{
 		float t = DE(pos);
-		if (t < 0.001f) 
+		if (t < 0.005f) 
 		{
 			float fx = (DE(make_float3(pos.x + EPS, pos.y, pos.z)) - DE(make_float3(pos.x - EPS, pos.y, pos.z))) / (2.0f * EPS);
 			float fy = (DE(make_float3(pos.x, pos.y + EPS, pos.z)) - DE(make_float3(pos.x, pos.y - EPS, pos.z))) / (2.0f * EPS);
@@ -54,7 +60,7 @@ __device__ Hit march(float3 orig, float3 direction)
 			hit.isHit = true;
 			hit.pos = pos;
 			hit.normal = normal;
-			hit.color = make_float3(0.8f);
+			hit.color = make_float3(1.0f, 1.0f, 1.0f);
 			return hit;
 		}
 
@@ -62,7 +68,6 @@ __device__ Hit march(float3 orig, float3 direction)
 		pos += t * dir;
 	}
 
-	
 	return hit;
 }
 
@@ -83,7 +88,7 @@ __global__ void render(int width, int height, float* result, Camera cam)
 	float2 offset = make_float2(0.5f, 0.5f);
 	float2 sample = make_float2(x, y) + offset;
 	float nx = (sample.x / float(width) - 0.5f) * 2.0f;
-	float ny = (sample.y / float(height) - 0.5f) * 2.0f;
+	float ny = -(sample.y / float(height) - 0.5f) * 2.0f;
 	ny *= float(height) / float(width);
 	float3 pt = cam.pos + cam.side * cam.halffov * nx + cam.up * ny * cam.halffov + cam.dir;
 	float3 raydir = normalize(pt - cam.pos);
