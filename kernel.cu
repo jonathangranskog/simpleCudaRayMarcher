@@ -8,7 +8,7 @@
 #include "sdf_util.hpp"
 
 #define BLOCK_SIZE 8
-#define BOUNCES 1
+#define BOUNCES 2
 #define EPS 1e-5
 #define PUSH 1e-2
 
@@ -21,18 +21,20 @@ float __host__ __device__ myrand(float2 seed)
 
 float3 __host__ __device__ orient(float3 n, float2 seed) 
 {
-	// DEBUG
-	float x, y;
-	do {
-		x = (myrand(seed) - 0.5f) * 2.0f;
-		y = (myrand(seed * 3.51 + 0.1) - 0.5f) * 2.0f;
-	} while (x * x + y * y > 1.0f);
+	float x = 1.0f, y = 1.0f;
+	float i = 0.0f;
+	float j = 0.0f;
+	while (x * x + y * y > 1.0f) 
+	{
+		x = (myrand(seed + make_float2(i * 1.9f, i * j * 3.72f + 0.5f)) - 0.5f) * 2.0f;
+		y = (myrand(seed + make_float2(4.5f * j, 3.5f + 0.7333f * j * j)) - 0.5f) * 2.0f;
+		i += seed.x;
+		j += seed.y;
+	}
 
 	float z = sqrtf(1 - x * x - y * y);
 	float3 in = normalize(make_float3(x, y, z));
-	return in;
-
-	float3 absn = make_float3(abs(n.x), abs(n.y), abs(n.z));
+	float3 absn = fabs(n);
 	float3 q = n;
 	if (absn.x <= absn.y && absn.x <= absn.z)  q.x = 1;
 	else if (absn.y <= absn.x && absn.y <= absn.z) q.y = 1;
@@ -65,6 +67,7 @@ struct Camera
 
 float __host__ __device__ DE(float3 pos) 
 {
+	//float mb = sdfSphere(pos - make_float3(0.0f, 1.0f, 0.0f), 1.0f);
 	float mb = mandelbulb(pos / 2.3f, 8, 4, 8.0f) * 2.3f;
 	float plane = sdfPlane(pos - make_float3(0, -2.0f, 0), make_float3(0, 1, 0));
 	return sdfUnion(mb, plane);
@@ -91,7 +94,7 @@ __device__ Hit march(float3 orig, float3 direction)
 			hit.isHit = true;
 			hit.pos = pos;
 			hit.normal = normal;
-			hit.color = make_float3(0.6f, 0.6f, 0.6f);
+			hit.color = make_float3(0.75f, 0.75f, 0.75f);
 			return hit;
 		}
 
@@ -112,15 +115,17 @@ __device__ float3 trace(float3 orig, float3 direction, float2 seed)
 
 	Hit rayhit = march(o, dir);
 	
-	/*for (int i = 0; i < BOUNCES + 1; i++) 
+	for (int i = 0; i < BOUNCES + 1; i++) 
 	{
 		if (rayhit.isHit) 
 		{
 			p = rayhit.pos; n = rayhit.normal;
-			float3 d = orient(n, i * seed * 13.735791f);
-			o = p + n * 0.01f;
+			float3 d = orient(n, (i + 1) * seed * 13.735791f);
+			o = p + n * PUSH;
 			mask *= rayhit.color;
 			dir = raylen * d;
+			//color = (d + 1.0f) * 0.5f;
+			//break;
 			if (i < BOUNCES) rayhit = march(o, dir);
 		}
 		else if (i == 0) return make_float3(0.0f);
@@ -129,11 +134,11 @@ __device__ float3 trace(float3 orig, float3 direction, float2 seed)
 			color += make_float3(1.0f) * mask;
 			break;
 		}
-	}*/
+	}
 
 	//if (rayhit.isHit)
-		//color = make_float3(max(dot(rayhit.normal, normalize(-dir)), 0.0f));
-	color = make_float3(myrand(seed));
+	//	color = make_float3(max(dot(rayhit.normal, normalize(-dir)), 0.0f));
+	//color = make_float3(myrand(seed));
 	
 	return color;
 }
