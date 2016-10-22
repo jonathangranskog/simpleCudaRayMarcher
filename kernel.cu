@@ -9,18 +9,29 @@
 
 #define BLOCK_SIZE 8
 #define BOUNCES 2
+#define SAMPLES 9
+#define MARCHSTEPS 16
 #define EPS 1e-5
 #define PUSH 1e-2
 
-float __host__ __device__ myrand(float2 seed) 
+inline float __host__ __device__ myrand(const float2& seed) 
 {
+	// Really simple "random" function
 	float s = abs(sin(dot(seed, make_float2(12.9898f, 78.233f))) * 43758.5453f);
 	float frac = s - int(s);
 	return frac;
 }
 
-float3 __host__ __device__ orient(float3 n, float2 seed) 
+// Purely random pixel sample
+inline float2 __host__ __device__ getRandomSample(int i, const float2& seed) 
 {
+	float2 s = make_float2(i + (i + 2) * seed.y + (i + 1) * seed.x, seed.x + seed.y + (i + 1));
+	return make_float2(myrand(s), myrand(s + 52));
+}
+
+float3 __host__ __device__ orient(const float3& n, const float2& seed) 
+{
+	// rejection sampling hemisphere
 	float x = 1.0f, y = 1.0f;
 	float i = 0.0f;
 	float j = 0.0f;
@@ -31,15 +42,17 @@ float3 __host__ __device__ orient(float3 n, float2 seed)
 		i += seed.x;
 		j += seed.y;
 	}
-
 	float z = sqrtf(1 - x * x - y * y);
 	float3 in = normalize(make_float3(x, y, z));
+
+	// Create vector that is not the same as n
 	float3 absn = fabs(n);
 	float3 q = n;
 	if (absn.x <= absn.y && absn.x <= absn.z)  q.x = 1;
 	else if (absn.y <= absn.x && absn.y <= absn.z) q.y = 1;
 	else q.z = 1;
 
+	// Basis creation, result is just a rolled out matrix multiplication of basis matrix and in vector
 	float3 t = normalize(cross(n, q));
 	float3 b = normalize(cross(n, t));
 	return normalize(make_float3(t.x * in.x + b.x * in.y + n.x * in.z,
@@ -65,7 +78,9 @@ struct Camera
 	float3 side;
 };
 
-float __host__ __device__ DE(float3 pos) 
+
+// Distance estimation function
+float __host__ __device__ DE(const float3& pos) 
 {
 	//float mb = sdfSphere(pos - make_float3(0.0f, 1.0f, 0.0f), 1.0f);
 	float mb = mandelbulb(pos / 2.3f, 8, 4, 8.0f) * 2.3f;
@@ -73,7 +88,8 @@ float __host__ __device__ DE(float3 pos)
 	return sdfUnion(mb, plane);
 }
 
-__device__ Hit march(float3 orig, float3 direction) 
+// Ray marching function, similar to intersect function in normal ray tracers
+__device__ Hit march(const float3& orig, const float3& direction) 
 {
 	float totaldist = 0.0f;
 	float maxdist = length(direction);
@@ -84,20 +100,27 @@ __device__ Hit march(float3 orig, float3 direction)
 	while (totaldist < maxdist) 
 	{
 		float t = DE(pos);
+
+		// If distance is less than this then it is a hit.
 		if (t < 0.005f) 
 		{
+			// Calculate gradient (normal)
 			float fx = (DE(make_float3(pos.x + EPS, pos.y, pos.z)) - DE(make_float3(pos.x - EPS, pos.y, pos.z))) / (2.0f * EPS);
 			float fy = (DE(make_float3(pos.x, pos.y + EPS, pos.z)) - DE(make_float3(pos.x, pos.y - EPS, pos.z))) / (2.0f * EPS);
 			float fz = (DE(make_float3(pos.x, pos.y, pos.z + EPS)) - DE(make_float3(pos.x, pos.y, pos.z - EPS))) / (2.0f * EPS);
 			float3 normal = normalize(make_float3(fx - t, fy - t, fz - t));
+			// faceforward
 			if (dot(-dir, normal) < 0) normal = -normal;
+
+			// create hit
 			hit.isHit = true;
 			hit.pos = pos;
 			hit.normal = normal;
-			hit.color = make_float3(0.75f, 0.75f, 0.75f);
+			hit.color = make_float3(0.85f, 0.85f, 0.85f);
 			return hit;
 		}
 
+		// step forwards by t if no hit
 		totaldist += t;
 		pos += t * dir;
 	}
@@ -105,7 +128,8 @@ __device__ Hit march(float3 orig, float3 direction)
 	return hit;
 }
 
-__device__ float3 trace(float3 orig, float3 direction, float2 seed)
+// Path tracing function
+__device__ float3 trace(const float3& orig, const float3& direction, const float2& seed)
 {
 	float raylen = length(direction);
 	float3 dir = direction;
@@ -120,25 +144,21 @@ __device__ float3 trace(float3 orig, float3 direction, float2 seed)
 		if (rayhit.isHit) 
 		{
 			p = rayhit.pos; n = rayhit.normal;
+			// Create new ray direction
 			float3 d = orient(n, (i + 1) * seed * 13.735791f);
 			o = p + n * PUSH;
 			mask *= rayhit.color;
 			dir = raylen * d;
-			//color = (d + 1.0f) * 0.5f;
-			//break;
+			// Fire new ray if there are bounces left
 			if (i < BOUNCES) rayhit = march(o, dir);
 		}
-		else if (i == 0) return make_float3(0.0f);
+		else if (i == 0) return make_float3(0.0f); // black background
 		else 
 		{
-			color += make_float3(1.0f) * mask;
+			color += make_float3(1.0f) * mask; // add color when light (sky) is hit
 			break;
 		}
 	}
-
-	//if (rayhit.isHit)
-	//	color = make_float3(max(dot(rayhit.normal, normalize(-dir)), 0.0f));
-	//color = make_float3(myrand(seed));
 	
 	return color;
 }
@@ -149,24 +169,28 @@ __global__ void render(int width, int height, float* result, Camera cam)
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	if (x >= width || y >= height) return;
 
-	// TODO: Sampling
-	float2 offset = make_float2(0.5f, 0.5f);
-	float2 sample = make_float2(x, y) + offset;
-	float nx = (sample.x / float(width) - 0.5f) * 2.0f;
-	float ny = -(sample.y / float(height) - 0.5f) * 2.0f;
-	ny *= float(height) / float(width);
-	float3 pt = cam.pos + cam.side * cam.halffov * nx + cam.up * ny * cam.halffov + cam.dir;
-	float3 raydir = normalize(pt - cam.pos);
+	float3 color = make_float3(0.0f);
+
+	float2 samp = make_float2(x, y);
+	float2 seed = make_float2(samp.x * 1.733f + samp.y * samp.x * 3.5150f, samp.y * 1.572f + 2.8349f * samp.x * samp.x);
+
+	for (int i = 0; i < SAMPLES; i++) {
+		float2 offset = getRandomSample(i, seed);
+		float2 sample = samp + offset;
+		float nx = (sample.x / float(width) - 0.5f) * 2.0f;
+		float ny = -(sample.y / float(height) - 0.5f) * 2.0f;
+		ny *= float(height) / float(width);
+		float3 pt = cam.pos + cam.side * cam.halffov * nx + cam.up * ny * cam.halffov + cam.dir;
+		float3 raydir = normalize(pt - cam.pos);
+		color += trace(cam.pos, raydir * cam.maxdist, seed + offset);
+	}
 	
-	float3 color = trace(cam.pos, raydir * cam.maxdist, sample);
+	color /= SAMPLES;
 
 	result[x * 3 + 3 * y * width + 0] = color.x;
 	result[x * 3 + 3 * y * width + 1] = color.y;
 	result[x * 3 + 3 * y * width + 2] = color.z;
 }
-
-
-
 
 void saveImage(int width, int height, const float colors[]) 
 {
@@ -192,7 +216,7 @@ int main()
 	cudaMalloc(&deviceImage, 3 * width * height * sizeof(float));
 
 	Camera cam;
-	cam.pos = make_float3(-1, 1.5, -3);
+	cam.pos = make_float3(-1, 1.5f, -3);
 	cam.dir = normalize(-cam.pos);
 	cam.side = normalize(cross(cam.dir, make_float3(0, 1, 0)));
 	cam.up = normalize(cross(cam.side, cam.dir));
