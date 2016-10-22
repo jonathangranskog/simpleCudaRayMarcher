@@ -53,7 +53,14 @@ inline float __host__ __device__ mandelbulb(float3 pos, int iterations, float ba
 		z += pos;
 	}
 
-	return 0.5*log(r)*r / dr;
+	return 0.5f*log(r)*r / dr;
+}
+
+inline float __host__ __device__ mandelbulbScene(const float3& pos) 
+{
+	float mb = mandelbulb(pos / 2.3f, 8, 4, 8.0f) * 2.3f;
+	float plane = sdfPlane(pos - make_float3(0, -2.0f, 0), make_float3(0, 1, 0));
+	return sdfUnion(mb, plane);
 }
 
 #endif

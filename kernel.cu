@@ -10,9 +10,9 @@
 #define BLOCK_SIZE 8
 #define BOUNCES 2
 #define SAMPLES 9
-#define MARCHSTEPS 16
 #define EPS 1e-5
-#define PUSH 1e-2
+#define MINDIST 0.5e-2
+#define PUSH MINDIST*2
 
 inline float __host__ __device__ myrand(const float2& seed) 
 {
@@ -82,10 +82,7 @@ struct Camera
 // Distance estimation function
 float __host__ __device__ DE(const float3& pos) 
 {
-	//float mb = sdfSphere(pos - make_float3(0.0f, 1.0f, 0.0f), 1.0f);
-	float mb = mandelbulb(pos / 2.3f, 8, 4, 8.0f) * 2.3f;
-	float plane = sdfPlane(pos - make_float3(0, -2.0f, 0), make_float3(0, 1, 0));
-	return sdfUnion(mb, plane);
+	return mandelbulbScene(pos);
 }
 
 // Ray marching function, similar to intersect function in normal ray tracers
@@ -102,7 +99,7 @@ __device__ Hit march(const float3& orig, const float3& direction)
 		float t = DE(pos);
 
 		// If distance is less than this then it is a hit.
-		if (t < 0.005f) 
+		if (t < MINDIST) 
 		{
 			// Calculate gradient (normal)
 			float fx = (DE(make_float3(pos.x + EPS, pos.y, pos.z)) - DE(make_float3(pos.x - EPS, pos.y, pos.z))) / (2.0f * EPS);
@@ -169,7 +166,10 @@ __global__ void render(int width, int height, float* result, Camera cam)
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	if (x >= width || y >= height) return;
 
-	float3 color = make_float3(0.0f);
+	// Store colors in shared memory for faster read/write time
+	__shared__ float3 colors[BLOCK_SIZE * BLOCK_SIZE];
+	int idx = threadIdx.x * blockDim.y + threadIdx.y;
+	colors[idx] = make_float3(0.0f);
 
 	float2 samp = make_float2(x, y);
 	float2 seed = make_float2(samp.x * 1.733f + samp.y * samp.x * 3.5150f, samp.y * 1.572f + 2.8349f * samp.x * samp.x);
@@ -182,14 +182,14 @@ __global__ void render(int width, int height, float* result, Camera cam)
 		ny *= float(height) / float(width);
 		float3 pt = cam.pos + cam.side * cam.halffov * nx + cam.up * ny * cam.halffov + cam.dir;
 		float3 raydir = normalize(pt - cam.pos);
-		color += trace(cam.pos, raydir * cam.maxdist, seed + offset);
+		colors[idx] += trace(cam.pos, raydir * cam.maxdist, seed + offset);
 	}
 	
-	color /= SAMPLES;
+	colors[idx] /= SAMPLES;
 
-	result[x * 3 + 3 * y * width + 0] = color.x;
-	result[x * 3 + 3 * y * width + 1] = color.y;
-	result[x * 3 + 3 * y * width + 2] = color.z;
+	result[x * 3 + 3 * y * width + 0] = colors[idx].x;
+	result[x * 3 + 3 * y * width + 1] = colors[idx].y;
+	result[x * 3 + 3 * y * width + 2] = colors[idx].z;
 }
 
 void saveImage(int width, int height, const float colors[]) 
