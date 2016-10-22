@@ -9,7 +9,7 @@ inline float __host__ __device__ sdfUnion(float a, float b)
 	return min(a, b);
 }
 
-inline float __host__ __device__sdfDifference(float a, float b)
+inline float __host__ __device__ sdfDifference(float a, float b)
 {
 	return max(-a, b);
 }
@@ -61,6 +61,25 @@ inline float __host__ __device__ mandelbulbScene(const float3& pos)
 	float mb = mandelbulb(pos / 2.3f, 8, 4, 8.0f) * 2.3f;
 	float plane = sdfPlane(pos - make_float3(0, -2.0f, 0), make_float3(0, 1, 0));
 	return sdfUnion(mb, plane);
+}
+
+inline float __host__ __device__ sphereScene(const float3& pos) 
+{
+	float3 mod1 = make_float3(fmodf(pos.x, 2.0) - 1.f, pos.y + 1.5f, fmodf(pos.z, 2.0f) - 1.f);
+	float spheres1 = sdfSphere(mod1, 0.5f);
+
+	float3 mod2 = make_float3(-fmodf(pos.x, 2.0) - 1.f, pos.y + 1.5f, fmodf(pos.z, 2.0) - 1.f);
+	float spheres2 = sdfSphere(mod2, 0.5f);
+
+	float3 mod3 = make_float3(fmodf(pos.x, 2.0) - 1.f, pos.y + 1.5f, -fmodf(pos.z, 2.0) - 1.f);
+	float spheres3 = sdfSphere(mod3, 0.5f);
+
+	float3 mod4 = make_float3(-fmodf(pos.x, 2.0) - 1.f, pos.y + 1.5f, -fmodf(pos.z, 2.0) - 1.f);
+	float spheres4 = sdfSphere(mod4, 0.5f);
+
+	float spheres = sdfUnion(sdfUnion(sdfUnion(spheres1, spheres2), spheres3), spheres4);
+	float plane = sdfPlane(pos - make_float3(0, -2.0f, 0), make_float3(0, 1, 0));
+	return sdfUnion(spheres, plane);
 }
 
 #endif

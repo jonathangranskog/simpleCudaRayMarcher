@@ -9,14 +9,15 @@
 
 #define BLOCK_SIZE 8
 #define BOUNCES 2
-#define SAMPLES 9
+#define SAMPLES 64
 #define EPS 1e-5
 #define MINDIST 0.5e-2
 #define PUSH MINDIST*2
 
+// TODO: Improve sampling and random function, figure out how to use CURAND?
 inline float __host__ __device__ myrand(const float2& seed) 
 {
-	// Really simple "random" function
+	// Really simple "random"
 	float s = abs(sin(dot(seed, make_float2(12.9898f, 78.233f))) * 43758.5453f);
 	float frac = s - int(s);
 	return frac;
@@ -82,11 +83,12 @@ struct Camera
 // Distance estimation function
 float __host__ __device__ DE(const float3& pos) 
 {
-	return mandelbulbScene(pos);
+	//return mandelbulbScene(pos);
+	return sphereScene(pos);
 }
 
 // Ray marching function, similar to intersect function in normal ray tracers
-__device__ Hit march(const float3& orig, const float3& direction) 
+__host__ __device__ Hit march(const float3& orig, const float3& direction) 
 {
 	float totaldist = 0.0f;
 	float maxdist = length(direction);
@@ -126,7 +128,7 @@ __device__ Hit march(const float3& orig, const float3& direction)
 }
 
 // Path tracing function
-__device__ float3 trace(const float3& orig, const float3& direction, const float2& seed)
+__host__ __device__ float3 trace(const float3& orig, const float3& direction, const float2& seed)
 {
 	float raylen = length(direction);
 	float3 dir = direction;
