@@ -1,6 +1,7 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include "cutil_math.h"
+#include "curand_kernel.h"
 
 #include <stdio.h>
 #include <iostream>
@@ -11,37 +12,24 @@
 #define BOUNCES 2
 #define SAMPLES 64
 #define EPS 1e-5
-#define MINDIST 0.5e-2
+#define MINDIST 1.0e-3
 #define PUSH MINDIST*2
 
-// TODO: Improve sampling and random function, figure out how to use CURAND?
-inline float __host__ __device__ myrand(const float2& seed) 
-{
-	// Really simple "random"
-	float s = abs(sin(dot(seed, make_float2(12.9898f, 78.233f))) * 43758.5453f);
-	float frac = s - int(s);
-	return frac;
-}
-
 // Purely random pixel sample
-inline float2 __host__ __device__ getRandomSample(int i, const float2& seed) 
+inline float2 __device__ getRandomSample(curandState* state) 
 {
-	float2 s = make_float2(i + (i + 2) * seed.y + (i + 1) * seed.x, seed.x + seed.y + (i + 1));
-	return make_float2(myrand(s), myrand(s + 52));
+	return make_float2(curand_uniform(state), curand_uniform(state));
 }
 
-float3 __host__ __device__ orient(const float3& n, const float2& seed) 
+float3 __device__ orient(const float3& n, curandState* state) 
 {
 	// rejection sampling hemisphere
 	float x = 1.0f, y = 1.0f;
-	float i = 0.0f;
-	float j = 0.0f;
+
 	while (x * x + y * y > 1.0f) 
 	{
-		x = (myrand(seed + make_float2(i * 1.9f, i * j * 3.72f + 0.5f)) - 0.5f) * 2.0f;
-		y = (myrand(seed + make_float2(4.5f * j, 3.5f + 0.7333f * j * j)) - 0.5f) * 2.0f;
-		i += seed.x;
-		j += seed.y;
+		x = (curand_uniform(state) - 0.5f) * 2.0f;
+		y = (curand_uniform(state) - 0.5f) * 2.0f;
 	}
 	float z = sqrtf(1 - x * x - y * y);
 	float3 in = normalize(make_float3(x, y, z));
@@ -81,14 +69,14 @@ struct Camera
 
 
 // Distance estimation function
-float __host__ __device__ DE(const float3& pos) 
+float __device__ DE(const float3& pos) 
 {
-	//return mandelbulbScene(pos);
-	return sphereScene(pos);
+	return mandelbulbScene(pos);
+	//return sphereScene(pos);
 }
 
 // Ray marching function, similar to intersect function in normal ray tracers
-__host__ __device__ Hit march(const float3& orig, const float3& direction) 
+__device__ Hit march(const float3& orig, const float3& direction) 
 {
 	float totaldist = 0.0f;
 	float maxdist = length(direction);
@@ -128,7 +116,7 @@ __host__ __device__ Hit march(const float3& orig, const float3& direction)
 }
 
 // Path tracing function
-__host__ __device__ float3 trace(const float3& orig, const float3& direction, const float2& seed)
+__device__ float3 trace(const float3& orig, const float3& direction, curandState* state)
 {
 	float raylen = length(direction);
 	float3 dir = direction;
@@ -144,7 +132,7 @@ __host__ __device__ float3 trace(const float3& orig, const float3& direction, co
 		{
 			p = rayhit.pos; n = rayhit.normal;
 			// Create new ray direction
-			float3 d = orient(n, (i + 1) * seed * 13.735791f);
+			float3 d = orient(n, state);
 			o = p + n * PUSH;
 			mask *= rayhit.color;
 			dir = raylen * d;
@@ -169,29 +157,32 @@ __global__ void render(int width, int height, float* result, Camera cam)
 	if (x >= width || y >= height) return;
 
 	// Store colors in shared memory for faster read/write time
-	__shared__ float3 colors[BLOCK_SIZE * BLOCK_SIZE];
-	int idx = threadIdx.x * blockDim.y + threadIdx.y;
-	colors[idx] = make_float3(0.0f);
+	float3 color = make_float3(0.0f);
+
+	int block = blockIdx.x + blockIdx.y * gridDim.x;
+	int idx = block * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
+	
+	curandState state;
+	curand_init(idx, 0, 0, &state);
 
 	float2 samp = make_float2(x, y);
-	float2 seed = make_float2(samp.x * 1.733f + samp.y * samp.x * 3.5150f, samp.y * 1.572f + 2.8349f * samp.x * samp.x);
-
+	
 	for (int i = 0; i < SAMPLES; i++) {
-		float2 offset = getRandomSample(i, seed);
+		float2 offset = getRandomSample(&state);
 		float2 sample = samp + offset;
 		float nx = (sample.x / float(width) - 0.5f) * 2.0f;
 		float ny = -(sample.y / float(height) - 0.5f) * 2.0f;
 		ny *= float(height) / float(width);
 		float3 pt = cam.pos + cam.side * cam.halffov * nx + cam.up * ny * cam.halffov + cam.dir;
 		float3 raydir = normalize(pt - cam.pos);
-		colors[idx] += trace(cam.pos, raydir * cam.maxdist, seed + offset);
+		color += trace(cam.pos, raydir * cam.maxdist, &state);
 	}
 	
-	colors[idx] /= SAMPLES;
+	color /= SAMPLES;
 
-	result[x * 3 + 3 * y * width + 0] = colors[idx].x;
-	result[x * 3 + 3 * y * width + 1] = colors[idx].y;
-	result[x * 3 + 3 * y * width + 2] = colors[idx].z;
+	result[x * 3 + 3 * y * width + 0] = color.x;
+	result[x * 3 + 3 * y * width + 1] = color.y;
+	result[x * 3 + 3 * y * width + 2] = color.z;
 }
 
 void saveImage(int width, int height, const float colors[]) 
