@@ -11,7 +11,7 @@
 
 #define BLOCK_SIZE 8
 #define BOUNCES 2
-#define SAMPLES 4 // Total number of samples is SAMPLES*SAMPLES
+#define SAMPLES 8 // Total number of samples is SAMPLES*SAMPLES
 #define EPS 1e-5
 #define MINDIST 2.5e-3
 #define PUSH MINDIST*2
@@ -79,8 +79,14 @@ struct Camera
 // Distance estimation function
 float __device__ DE(const float3& pos) 
 {
-	return mandelbulbScene(pos);
-	//return sphereScene(pos);
+	//return mandelbulbScene(pos);
+	return sphereScene(pos);
+}
+
+float3 __device__ sceneColor(const float3& pos) 
+{
+	// return mandelbulbColor(pos);
+	return sphereColor(pos);
 }
 
 // Ray marching function, similar to intersect function in normal ray tracers
@@ -89,6 +95,7 @@ __device__ Hit march(const float3& orig, const float3& direction)
 	float totaldist = 0.0f;
 	float maxdist = length(direction);
 	float3 pos = orig; float3 dir = normalize(direction);
+	float3 col = make_float3(0.85f, 0.85f, 0.85f);
 
 	Hit hit;
 
@@ -111,7 +118,7 @@ __device__ Hit march(const float3& orig, const float3& direction)
 			hit.isHit = true;
 			hit.pos = pos;
 			hit.normal = normal;
-			hit.color = make_float3(0.85f, 0.85f, 0.85f);
+			hit.color = sceneColor(pos);
 			return hit;
 		}
 

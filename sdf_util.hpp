@@ -63,6 +63,14 @@ inline float __host__ __device__ mandelbulbScene(const float3& pos)
 	return sdfUnion(mb, plane);
 }
 
+inline float3 __host__ __device__ mandelbulbColor(const float3& pos)
+{
+	float mb = mandelbulb(pos / 2.3f, 8, 4, 8.0f) * 2.3f;
+	float plane = sdfPlane(pos - make_float3(0, -2.0f, 0), make_float3(0, 1, 0));
+	if (plane < mb) return make_float3(0.85f);
+	return make_float3(0.85f, 1.0f, 0.0f);
+}
+
 inline float __host__ __device__ sphereScene(const float3& pos) 
 {
 	float3 mod1 = make_float3(fmodf(pos.x, 2.0) - 1.f, pos.y + 1.5f, fmodf(pos.z, 2.0f) - 1.f);
@@ -80,6 +88,27 @@ inline float __host__ __device__ sphereScene(const float3& pos)
 	float spheres = sdfUnion(sdfUnion(sdfUnion(spheres1, spheres2), spheres3), spheres4);
 	float plane = sdfPlane(pos - make_float3(0, -2.0f, 0), make_float3(0, 1, 0));
 	return sdfUnion(spheres, plane);
+}
+
+inline float3 __host__ __device__ sphereColor(const float3& pos) 
+{
+	float3 mod1 = make_float3(fmodf(pos.x, 2.0) - 1.f, pos.y + 1.5f, fmodf(pos.z, 2.0f) - 1.f);
+	float spheres1 = sdfSphere(mod1, 0.5f);
+
+	float3 mod2 = make_float3(-fmodf(pos.x, 2.0) - 1.f, pos.y + 1.5f, fmodf(pos.z, 2.0) - 1.f);
+	float spheres2 = sdfSphere(mod2, 0.5f);
+
+	float3 mod3 = make_float3(fmodf(pos.x, 2.0) - 1.f, pos.y + 1.5f, -fmodf(pos.z, 2.0) - 1.f);
+	float spheres3 = sdfSphere(mod3, 0.5f);
+
+	float3 mod4 = make_float3(-fmodf(pos.x, 2.0) - 1.f, pos.y + 1.5f, -fmodf(pos.z, 2.0) - 1.f);
+	float spheres4 = sdfSphere(mod4, 0.5f);
+
+	float spheres = sdfUnion(sdfUnion(sdfUnion(spheres1, spheres2), spheres3), spheres4);
+	float plane = sdfPlane(pos - make_float3(0, -2.0f, 0), make_float3(0, 1, 0));
+	
+	if (plane < spheres) return make_float3(1.0f, 0.3f, 0.1f);
+	return make_float3(0.85f);
 }
 
 #endif
