@@ -11,10 +11,11 @@
 
 #define BLOCK_SIZE 8
 #define BOUNCES 2
-#define SAMPLES 8 // Total number of samples is SAMPLES*SAMPLES
+#define SAMPLES 3 // Total number of samples is SAMPLES*SAMPLES
 #define EPS 1e-5
-#define MINDIST 2.5e-3
+#define MINDIST 1.8e-3
 #define PUSH MINDIST*2
+#define M_PI 3.14159265359
 
 // Purely random pixel sample
 inline float2 __device__ getRandomSample(curandState* state) 
@@ -79,14 +80,16 @@ struct Camera
 // Distance estimation function
 float __device__ DE(const float3& pos) 
 {
-	//return mandelbulbScene(pos);
-	return sphereScene(pos);
+	return mandelbulbScene(pos);
+	//return sphereScene(pos);
+	//return cornellBoxScene(pos);
 }
 
 float3 __device__ sceneColor(const float3& pos) 
 {
-	// return mandelbulbColor(pos);
-	return sphereColor(pos);
+	return mandelbulbColor(pos);
+	//return sphereColor(pos);
+	//return cornellBoxColor(pos);
 }
 
 // Ray marching function, similar to intersect function in normal ray tracers
@@ -217,7 +220,7 @@ void saveImage(int width, int height, const float colors[])
 
 int main()
 {
-	int width = 1024, height = 1024;
+	int width = 1920, height = 1080;
 	dim3 threads(BLOCK_SIZE, BLOCK_SIZE);
 	dim3 blocks(width / threads.x + 1, height / threads.y + 1);
 	float *deviceImage;
@@ -225,10 +228,11 @@ int main()
 
 	Camera cam;
 	cam.pos = make_float3(-1, 1.5f, -3);
+	//cam.pos = make_float3(0, 0.15f, -1.4f);
 	cam.dir = normalize(-cam.pos);
 	cam.side = normalize(cross(cam.dir, make_float3(0, 1, 0)));
 	cam.up = normalize(cross(cam.side, cam.dir));
-	float fov = 90.0f;
+	float fov = 128.0f / 180.0f * float(M_PI);
 	cam.halffov = std::tan(fov / 2.0f);
 
 	unsigned long long seed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
