@@ -5,20 +5,28 @@
 
 #include <stdio.h>
 #include <iostream>
+#include <chrono>
 #include "lodepng.h"
 #include "sdf_util.hpp"
 
 #define BLOCK_SIZE 8
 #define BOUNCES 2
-#define SAMPLES 64
+#define SAMPLES 4 // Total number of samples is SAMPLES*SAMPLES
 #define EPS 1e-5
-#define MINDIST 1.0e-3
+#define MINDIST 2.5e-3
 #define PUSH MINDIST*2
 
 // Purely random pixel sample
 inline float2 __device__ getRandomSample(curandState* state) 
 {
 	return make_float2(curand_uniform(state), curand_uniform(state));
+}
+
+// Random sample in nth subpixel
+inline float2 __device__ getJitteredSample(int n, curandState* state) {
+	float2 rand_vec = make_float2(curand_uniform(state) * (1.0f / SAMPLES), curand_uniform(state) * (1.0f / SAMPLES));
+	float2 result = make_float2((n % SAMPLES) * 1.0f / SAMPLES, (n / SAMPLES) * 1.0f / SAMPLES);
+	return result + rand_vec;
 }
 
 float3 __device__ orient(const float3& n, curandState* state) 
@@ -150,25 +158,25 @@ __device__ float3 trace(const float3& orig, const float3& direction, curandState
 	return color;
 }
 
-__global__ void render(int width, int height, float* result, Camera cam)
+__global__ void render(int width, int height, float* result, Camera cam, unsigned seed)
 {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	if (x >= width || y >= height) return;
 
-	// Store colors in shared memory for faster read/write time
 	float3 color = make_float3(0.0f);
 
 	int block = blockIdx.x + blockIdx.y * gridDim.x;
-	int idx = block * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
+	unsigned idx = block * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
 	
 	curandState state;
-	curand_init(idx, 0, 0, &state);
+	curand_init(idx + seed, 0, 0, &state);
 
 	float2 samp = make_float2(x, y);
 	
-	for (int i = 0; i < SAMPLES; i++) {
-		float2 offset = getRandomSample(&state);
+	for (int i = 0; i < SAMPLES * SAMPLES; i++) {
+		//float2 offset = getRandomSample(&state);
+		float2 offset = getJitteredSample(i, &state);
 		float2 sample = samp + offset;
 		float nx = (sample.x / float(width) - 0.5f) * 2.0f;
 		float ny = -(sample.y / float(height) - 0.5f) * 2.0f;
@@ -178,7 +186,7 @@ __global__ void render(int width, int height, float* result, Camera cam)
 		color += trace(cam.pos, raydir * cam.maxdist, &state);
 	}
 	
-	color /= SAMPLES;
+	color /= (SAMPLES * SAMPLES);
 
 	result[x * 3 + 3 * y * width + 0] = color.x;
 	result[x * 3 + 3 * y * width + 1] = color.y;
@@ -216,7 +224,9 @@ int main()
 	float fov = 90.0f;
 	cam.halffov = std::tan(fov / 2.0f);
 
-	render << <blocks, threads >> >(width, height, deviceImage, cam);
+	unsigned seed = unsigned(unsigned long long (std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1)));
+
+	render << <blocks, threads >> >(width, height, deviceImage, cam, seed);
 
 	float *hostImage = (float*) malloc(3 * width * height * sizeof(float));
 	cudaMemcpy(hostImage, deviceImage, 3 * width * height * sizeof(float), cudaMemcpyDeviceToHost);
