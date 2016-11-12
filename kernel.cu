@@ -158,7 +158,7 @@ __device__ float3 trace(const float3& orig, const float3& direction, curandState
 	return color;
 }
 
-__global__ void render(int width, int height, float* result, Camera cam, unsigned seed)
+__global__ void render(int width, int height, float* result, Camera cam, unsigned long long seed)
 {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -167,7 +167,7 @@ __global__ void render(int width, int height, float* result, Camera cam, unsigne
 	float3 color = make_float3(0.0f);
 
 	int block = blockIdx.x + blockIdx.y * gridDim.x;
-	unsigned idx = block * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
+	unsigned long long idx = block * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
 	
 	curandState state;
 	curand_init(idx + seed, 0, 0, &state);
@@ -224,8 +224,8 @@ int main()
 	float fov = 90.0f;
 	cam.halffov = std::tan(fov / 2.0f);
 
-	unsigned seed = unsigned(unsigned long long (std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1)));
-
+	unsigned long long seed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	
 	render << <blocks, threads >> >(width, height, deviceImage, cam, seed);
 
 	float *hostImage = (float*) malloc(3 * width * height * sizeof(float));
