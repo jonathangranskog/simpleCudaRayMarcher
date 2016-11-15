@@ -80,14 +80,16 @@ struct Camera
 // Distance estimation function
 float __device__ DE(const float3& pos) 
 {
-	return mandelbulbScene(pos);
+	//return mandelbulbScene(pos);
 	//return sphereScene(pos);
 	//return cornellBoxScene(pos);
+	return mengerScene(pos, 5);
 }
 
 float3 __device__ sceneColor(const float3& pos) 
 {
-	return mandelbulbColor(pos);
+	return make_float3(0.85f);
+	//return mandelbulbColor(pos);
 	//return sphereColor(pos);
 	//return cornellBoxColor(pos);
 }

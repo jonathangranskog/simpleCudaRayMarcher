@@ -4,6 +4,21 @@
 #include <cuda_runtime.h>
 #include "cutil_math.h"
 
+
+// Mod function that doesn't change sign on negative number input, unlike fmod. 
+inline float __host__ __device__ mmod(float x, float y) 
+{
+	return x - y * floor(x / y);
+}
+
+inline float3 __host__ __device__ mmod(float3 x, float y) 
+{
+	return make_float3(x.x - y * floor(x.x / y), x.y - y * floor(x.y / y), x.z - y * floor(x.z / y));
+}
+
+// Many of the SDFs here are based on Inigo Quilez' fantastic work.
+// http://www.iquilezles.org/www/articles/distfunctions/distfunctions.htm
+
 inline float __host__ __device__ sdfUnion(float a, float b)
 {
 	return min(a, b);
@@ -11,7 +26,7 @@ inline float __host__ __device__ sdfUnion(float a, float b)
 
 inline float __host__ __device__ sdfDifference(float a, float b)
 {
-	return max(-a, b);
+	return max(a, -b);
 }
 
 inline float __host__ __device__ sdfIntersection(float a, float b)
@@ -37,6 +52,7 @@ inline float __host__ __device__ sdfBox(float3 pos, float3 dim)
 
 inline float __host__ __device__ mandelbulb(float3 pos, int iterations, float bail, float power)
 {
+	// http://iquilezles.org/www/articles/mandelbulb/mandelbulb.htm
 	float3 z = pos;
 	float dr = 1.0;
 	float r = 0.0;
@@ -91,6 +107,37 @@ inline float3 __host__ __device__ mandelbulbColor(float3 pos, int iterations, fl
 	}
 
 	return color;
+}
+
+inline float __host__ __device__ mengerCross(float3 pos)
+{
+	float a = sdfBox(make_float3(pos.x, pos.y, pos.z), make_float3(100.0f, 1.025f, 1.025f));
+	float b = sdfBox(make_float3(pos.y, pos.z, pos.x), make_float3(1.025f, 100.0f, 1.025f));
+	float c = sdfBox(make_float3(pos.z, pos.x, pos.y), make_float3(1.025f, 1.025f, 100.0f));
+	return sdfUnion(sdfUnion(a, b), c);
+}
+
+inline float __host__ __device__ mengerBox(float3 pos, int iterations) 
+{
+	// http://iquilezles.org/www/articles/menger/menger.htm
+	float main = sdfBox(pos, make_float3(1.0f));
+	float scale = 1.0f;
+	for (int i = 0; i < iterations; i++)
+	{
+		float3 a = mmod(pos * scale, 2.0f) - 1.0f;
+		scale *= 3.0f;
+		float3 r = 1.0f - 3.0f * fabs(a);
+		float c = mengerCross(r) / scale;
+		main = sdfIntersection(main, c);
+	}
+	return main;
+}
+
+inline float __host__ __device__ mengerScene(float3 pos, int iterations) 
+{
+	float plane = sdfPlane(pos - make_float3(0, -1, 0), make_float3(0, 1, 0));
+	float mb = mengerBox(pos, iterations);
+	return sdfUnion(plane, mb);
 }
 
 inline float __host__ __device__ mandelbulbScene(const float3& pos) 
@@ -184,4 +231,5 @@ inline float3 __host__ __device__ cornellBoxColor(const float3& pos) {
 
 	return make_float3(0.85f);
 }
+
 #endif
