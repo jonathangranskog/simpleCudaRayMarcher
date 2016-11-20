@@ -16,6 +16,10 @@ inline float3 __host__ __device__ mmod(float3 x, float y)
 	return make_float3(x.x - y * floor(x.x / y), x.y - y * floor(x.y / y), x.z - y * floor(x.z / y));
 }
 
+inline float3 __host__ __device__ mmod(float3 x, float3 y) {
+	return make_float3(x.x - y.x * floor(x.x / y.x), x.y - y.y * floor(x.y / y.y), x.z - y.z * floor(x.z / y.z));
+}
+
 // Many of the SDFs here are based on Inigo Quilez' fantastic work.
 // http://www.iquilezles.org/www/articles/distfunctions/distfunctions.htm
 
@@ -48,6 +52,46 @@ inline float __host__ __device__ sdfBox(float3 pos, float3 dim)
 {
 	float3 d = fabs(pos) - dim;
 	return min(max(d.x, max(d.y, d.z)), 0.0f) + length(fmaxf(d, make_float3(0.0f)));
+}
+
+inline float3 __host__ __device__ boxFold(float3 pos, float3 dim) 
+{
+	return fminf(fmaxf(pos, -dim), dim) * 2.0f - pos;
+}
+
+inline float3 __host__ __device__ sphereFold(float3 pos, float radius, float inner) 
+{
+	float r = length(pos);
+	float3 p = pos;
+	if (r < inner) p = p * (radius * radius) / (inner * inner);
+	else if (r < radius) p = (p * radius * radius) / (r * r);
+	return p;
+}
+
+inline float3 __host__ __device__ tetraFold(float3 pos) 
+{
+	float3 p = pos;
+	if (p.x - p.y < 0) { float tmp = p.y; p.y = p.x; p.x = tmp; }
+	if (p.x - p.z < 0) { float tmp = p.z; p.z = p.x; p.x = tmp; }
+	if (p.y - p.z < 0) { float tmp = p.z; p.z = p.y; p.y = tmp; }
+	if (p.x + p.y < 0) { float tmp = -p.y; p.y = -p.x; p.x = tmp; }
+	if (p.x + p.z < 0) { float tmp = -p.z; p.z = -p.x; p.x = tmp; }
+	if (p.y + p.z < 0) { float tmp = -p.z; p.z = -p.y; p.y = tmp; }
+	return p;
+}
+
+inline float3 __host__ __device__ cubicFold(float3 pos) 
+{
+	return fabs(pos);
+}
+
+inline float3 __host__ __device__ octaFold(float3 pos) 
+{
+	float3 p = fabs(pos);
+	if (p.x - p.y < 0){ float tmp = p.y; p.y = p.x; p.x = tmp; }
+	if (p.x - p.z < 0){ float tmp = p.z; p.z = p.x; p.x = tmp; }
+	if (p.y - p.z < 0){ float tmp = p.z; p.z = p.y; p.y = tmp; }
+	return p;
 }
 
 inline float __host__ __device__ mandelbulb(float3 pos, int iterations, float bail, float power)
@@ -94,7 +138,7 @@ inline float3 __host__ __device__ mandelbulbColor(float3 pos, int iterations, fl
 		float phi = atan2(z.y, z.x);
 		dr = pow(r, power - 1.0f) * power * dr + 1.0f;
 
-		color = make_float3(cos(theta * 1.9f)*cos(phi * 1.45f), sin(phi * 1.45f)*cos(theta * 1.2f), sin(theta * 1.2f));
+		color = make_float3(cos(theta * 1.1f)*cos(phi / 1.45f), sin(phi / 1.8f)*cos(theta / 1.8f), sin(theta / 1.6f));
 
 		// scale and rotate the point
 		float zr = pow(r, power);
@@ -136,18 +180,38 @@ inline float __host__ __device__ mengerBox(float3 pos, int iterations)
 inline float __host__ __device__ mengerScene(float3 pos, int iterations) 
 {
 	float plane = sdfPlane(pos - make_float3(0, -1, 0), make_float3(0, 1, 0));
-	float mb = mengerBox(pos, iterations);
-	return sdfUnion(plane, mb);
+	float mb = mengerBox(pos / 1.5f, iterations) * 1.5f;
+	float mandel = mandelbulb(pos / 2.3f, 8, 4, 8.0f) * 2.3f;
+	mb = sdfIntersection(mb, mandel);
+	return mb;
+}
+
+inline float __host__ __device__ testFractalScene(float3 pos) 
+{
+	//float3 p = boxFold(pos, make_float3(0.5f, 0.5f, .5f));
+	//float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));
+	float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));
+	p = tetraFold(p);
+	p = octaFold(p);
+	
+	//p = halfTetraFold(p);
+	//return sdfSphere(p, 0.6f);
+	//return sdfUnion(mengerBox(p, 5), sdfPlane(pos - make_float3(0, -1.25f, 0), make_float3(0, 1, 0)));
+	return sdfUnion(mengerBox(p / make_float3(1.0f, 1.6f, 1.15f), 6), sdfPlane(pos - make_float3(0, -1.25f, 0), make_float3(0, 1, 0)));
 }
 
 inline float __host__ __device__ mandelbulbScene(const float3& pos) 
 {
+	//float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));;
+	//p = octaFold(p);
 	float mb = mandelbulb(pos / 2.3f, 8, 4, 8.0f) * 2.3f;
 	return mb;
 }
 
 inline float3 __host__ __device__ mandelbulbColor(const float3& pos)
 {
+	//float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));;
+	//p = octaFold(p);
 	return mandelbulbColor(pos / 2.3f, 8, 4, 8.0f);
 }
 
@@ -200,10 +264,10 @@ inline float __host__ __device__ cornellBoxScene(const float3& pos)
 	float plane = sdfPlane(pos - make_float3(0, -1.5f, 0), make_float3(0, 1, 0));
 
 	float smallSphere = sdfSphere(pos - make_float3(0.7f, -1.0f, 0.6f), 0.5f);
-	float bigSphere = sdfSphere(pos - make_float3(-0.7f, -0.9f, 0.2f), 0.6f);
-	float spheres = sdfUnion(bigSphere, smallSphere);
+	float menger = mengerBox((pos - make_float3(-0.7f, -1.0f, 0.2f)) / 0.5f, 5) * 0.5f;
+	float objs = sdfUnion(smallSphere, menger);
 
-	return sdfUnion(sdfUnion(sdfUnion(sdfUnion(sdfUnion(rightplane, plane), leftplane), backplane), topplane), spheres);
+	return sdfUnion(sdfUnion(sdfUnion(sdfUnion(sdfUnion(rightplane, plane), leftplane), backplane), topplane), objs);
 }
 
 inline float3 __host__ __device__ cornellBoxColor(const float3& pos) {
