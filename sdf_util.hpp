@@ -186,11 +186,11 @@ inline float __host__ __device__ mengerScene(float3 pos, int iterations)
 	return mb;
 }
 
-inline float __host__ __device__ testFractalScene(float3 pos) 
+inline float __host__ __device__ testFractalScene(float3 pos, float time) 
 {
 	//float3 p = boxFold(pos, make_float3(0.5f, 0.5f, .5f));
 	//float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));
-	float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));
+	float3 p = boxFold(sphereFold(pos, 1.0f + time * 0.75f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));
 	p = tetraFold(p);
 	p = octaFold(p);
 	
@@ -200,19 +200,19 @@ inline float __host__ __device__ testFractalScene(float3 pos)
 	return sdfUnion(mengerBox(p / make_float3(1.0f, 1.6f, 1.15f), 6), sdfPlane(pos - make_float3(0, -1.25f, 0), make_float3(0, 1, 0)));
 }
 
-inline float __host__ __device__ mandelbulbScene(const float3& pos) 
+inline float __host__ __device__ mandelbulbScene(const float3& pos, float time) 
 {
 	//float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));;
 	//p = octaFold(p);
-	float mb = mandelbulb(pos / 2.3f, 8, 4, 8.0f) * 2.3f;
+	float mb = mandelbulb(pos / 2.3f, 8, 4, 1.0f + 9.0f * time) * 2.3f;
 	return mb;
 }
 
-inline float3 __host__ __device__ mandelbulbColor(const float3& pos)
+inline float3 __host__ __device__ mandelbulbColor(const float3& pos, float time)
 {
 	//float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));;
 	//p = octaFold(p);
-	return mandelbulbColor(pos / 2.3f, 8, 4, 8.0f);
+	return mandelbulbColor(pos / 2.3f, 8, 4, 1.0f + 9.0f * time);
 }
 
 inline float __host__ __device__ sphereScene(const float3& pos) 

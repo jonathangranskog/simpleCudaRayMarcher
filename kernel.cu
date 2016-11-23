@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 #include <iostream>
+#include <string>
 #include <chrono>
 #include "lodepng.h"
 #include "sdf_util.hpp"
@@ -16,6 +17,7 @@
 #define MINDIST 1.8e-3
 #define PUSH MINDIST*2
 #define M_PI 3.14159265359
+#define FRAMES 100
 
 // Purely random pixel sample
 inline float2 __device__ getRandomSample(curandState* state) 
@@ -78,25 +80,25 @@ struct Camera
 
 
 // Distance estimation function
-float __device__ DE(const float3& pos) 
+float __device__ DE(const float3& pos, float time) 
 {
-	//return mandelbulbScene(pos);
+	return mandelbulbScene(pos, time);
 	//return sphereScene(pos);
 	//return cornellBoxScene(pos);
 	//return mengerScene(pos, 6);
-	return testFractalScene(pos);
+	//return testFractalScene(pos, time);
 }
 
-float3 __device__ sceneColor(const float3& pos) 
+float3 __device__ sceneColor(const float3& pos, float time) 
 {
 	return make_float3(0.85f);
-	//return mandelbulbColor(pos);
+	//return mandelbulbColor(pos, time);
 	//return sphereColor(pos);
 	//return cornellBoxColor(pos);
 }
 
 // Ray marching function, similar to intersect function in normal ray tracers
-__device__ Hit march(const float3& orig, const float3& direction) 
+__device__ Hit march(const float3& orig, const float3& direction, float time) 
 {
 	float totaldist = 0.0f;
 	float maxdist = length(direction);
@@ -107,15 +109,15 @@ __device__ Hit march(const float3& orig, const float3& direction)
 
 	while (totaldist < maxdist) 
 	{
-		float t = DE(pos);
+		float t = DE(pos, time);
 
 		// If distance is less than this then it is a hit.
 		if (t < MINDIST) 
 		{
 			// Calculate gradient (normal)
-			float fx = (DE(make_float3(pos.x + EPS, pos.y, pos.z)) - DE(make_float3(pos.x - EPS, pos.y, pos.z))) / (2.0f * EPS);
-			float fy = (DE(make_float3(pos.x, pos.y + EPS, pos.z)) - DE(make_float3(pos.x, pos.y - EPS, pos.z))) / (2.0f * EPS);
-			float fz = (DE(make_float3(pos.x, pos.y, pos.z + EPS)) - DE(make_float3(pos.x, pos.y, pos.z - EPS))) / (2.0f * EPS);
+			float fx = (DE(make_float3(pos.x + EPS, pos.y, pos.z), time) - DE(make_float3(pos.x - EPS, pos.y, pos.z), time)) / (2.0f * EPS);
+			float fy = (DE(make_float3(pos.x, pos.y + EPS, pos.z), time) - DE(make_float3(pos.x, pos.y - EPS, pos.z), time)) / (2.0f * EPS);
+			float fz = (DE(make_float3(pos.x, pos.y, pos.z + EPS), time) - DE(make_float3(pos.x, pos.y, pos.z - EPS), time)) / (2.0f * EPS);
 			float3 normal = normalize(make_float3(fx - t, fy - t, fz - t));
 			// faceforward
 			if (dot(-dir, normal) < 0) normal = -normal;
@@ -124,7 +126,7 @@ __device__ Hit march(const float3& orig, const float3& direction)
 			hit.isHit = true;
 			hit.pos = pos;
 			hit.normal = normal;
-			hit.color = sceneColor(pos);
+			hit.color = sceneColor(pos, time);
 			return hit;
 		}
 
@@ -137,7 +139,7 @@ __device__ Hit march(const float3& orig, const float3& direction)
 }
 
 // Path tracing function
-__device__ float3 trace(const float3& orig, const float3& direction, curandState* state)
+__device__ float3 trace(const float3& orig, const float3& direction, curandState* state, float time)
 {
 	float raylen = length(direction);
 	float3 dir = direction;
@@ -145,7 +147,7 @@ __device__ float3 trace(const float3& orig, const float3& direction, curandState
 	float3 p = make_float3(0.0f); float3 n = make_float3(0.0f);
 	float3 mask = make_float3(1.0f); float3 color = make_float3(0.0f);
 
-	Hit rayhit = march(o, dir);
+	Hit rayhit = march(o, dir, time);
 	
 	for (int i = 0; i < BOUNCES + 1; i++) 
 	{
@@ -158,7 +160,7 @@ __device__ float3 trace(const float3& orig, const float3& direction, curandState
 			mask *= rayhit.color;
 			dir = raylen * d;
 			// Fire new ray if there are bounces left
-			if (i < BOUNCES) rayhit = march(o, dir);
+			if (i < BOUNCES) rayhit = march(o, dir, time);
 		}
 		else if (i == 0) return make_float3(0.0f); // black background
 		else 
@@ -171,7 +173,7 @@ __device__ float3 trace(const float3& orig, const float3& direction, curandState
 	return color;
 }
 
-__global__ void render(int width, int height, float* result, Camera cam, unsigned long long seed)
+__global__ void render(int width, int height, float* result, Camera cam, unsigned long long seed, float time)
 {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -196,7 +198,7 @@ __global__ void render(int width, int height, float* result, Camera cam, unsigne
 		ny *= float(height) / float(width);
 		float3 pt = cam.pos + cam.side * cam.halffov * nx + cam.up * ny * cam.halffov + cam.dir;
 		float3 raydir = normalize(pt - cam.pos);
-		color += trace(cam.pos, raydir * cam.maxdist, &state);
+		color += trace(cam.pos, raydir * cam.maxdist, &state, time);
 	}
 	
 	color /= (SAMPLES * SAMPLES);
@@ -206,7 +208,7 @@ __global__ void render(int width, int height, float* result, Camera cam, unsigne
 	result[x * 3 + 3 * y * width + 2] = color.z;
 }
 
-void saveImage(int width, int height, const float colors[]) 
+void saveImage(std::string path, int width, int height, const float colors[]) 
 {
 	std::vector<unsigned char> output;
 	output.resize(4 * width * height);
@@ -217,7 +219,7 @@ void saveImage(int width, int height, const float colors[])
 		output[i * 4 + 2] = static_cast<unsigned char>(std::fmax(std::fmin(colors[i * 3 + 2] * 255, 255), 0));
 		output[i * 4 + 3] = 255;
 	}
-	unsigned error = lodepng::encode("test.png", output, width, height);
+	unsigned error = lodepng::encode(path, output, width, height);
 	if (error) std::cout << "An error occurred: " << lodepng_error_text(error) << std::endl;
 }
 
@@ -226,9 +228,7 @@ int main()
 	int width = 1920, height = 1080;
 	dim3 threads(BLOCK_SIZE, BLOCK_SIZE);
 	dim3 blocks(width / threads.x + 1, height / threads.y + 1);
-	float *deviceImage;
-	cudaMalloc(&deviceImage, 3 * width * height * sizeof(float));
-
+	
 	Camera cam;
 	cam.pos = make_float3(-1.0f, 1.5f, -3.0f);
 	//cam.pos = make_float3(0, 0.4f, -1.4f);
@@ -238,14 +238,26 @@ int main()
 	float fov = 128.0f / 180.0f * float(M_PI);
 	cam.halffov = std::tan(fov / 2.0f);
 
-	unsigned long long seed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-	
-	render << <blocks, threads >> >(width, height, deviceImage, cam, seed);
+	for (int i = 0; i < FRAMES; i++) {
+		float *deviceImage;
+		cudaMalloc(&deviceImage, 3 * width * height * sizeof(float));
+		
+		unsigned long long seed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		
+		float t = 0.0f;
+		if (FRAMES > 1) t = float(i) / (FRAMES - 1.0f);
 
-	float *hostImage = (float*) malloc(3 * width * height * sizeof(float));
-	cudaMemcpy(hostImage, deviceImage, 3 * width * height * sizeof(float), cudaMemcpyDeviceToHost);
-	saveImage(width, height, hostImage);
-	cudaFree(deviceImage);
-	free(hostImage);
-    return 0;
+		render << <blocks, threads >> >(width, height, deviceImage, cam, seed, t);
+		
+		float *hostImage = (float*)malloc(3 * width * height * sizeof(float));
+		cudaMemcpy(hostImage, deviceImage, 3 * width * height * sizeof(float), cudaMemcpyDeviceToHost);
+		std::string imageName = "renders/render_" + std::to_string(i + 1) + ".png";
+		saveImage(imageName, width, height, hostImage);
+		cudaFree(deviceImage);
+		free(hostImage);
+
+		std::cout << "Frame " << (i + 1) << " done! Saved as " << imageName << "." << std::endl;
+	}
+
+	return 0;
 }
