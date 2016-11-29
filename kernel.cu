@@ -17,7 +17,7 @@
 #define MINDIST 1.8e-3
 #define PUSH MINDIST*2
 #define M_PI 3.14159265359
-#define FRAMES 100
+#define FRAMES 1
 
 // Purely random pixel sample
 inline float2 __device__ getRandomSample(curandState* state) 
@@ -82,11 +82,11 @@ struct Camera
 // Distance estimation function
 float __device__ DE(const float3& pos, float time) 
 {
-	return mandelbulbScene(pos, time);
+	//return mandelbulbScene(pos, time);
 	//return sphereScene(pos);
 	//return cornellBoxScene(pos);
 	//return mengerScene(pos, 6);
-	//return testFractalScene(pos, time);
+	return testFractalScene(pos, time);
 }
 
 float3 __device__ sceneColor(const float3& pos, float time) 
@@ -244,7 +244,7 @@ int main()
 		
 		unsigned long long seed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		
-		float t = 0.0f;
+		float t = 1.0f;
 		if (FRAMES > 1) t = float(i) / (FRAMES - 1.0f);
 
 		render << <blocks, threads >> >(width, height, deviceImage, cam, seed, t);

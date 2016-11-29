@@ -1,6 +1,8 @@
 #ifndef __SDF_UTIL__
 #define __SDF_UTIL__
 
+#define PHI ((1.0f + sqrtf(5)) / 2.0f)
+
 #include <cuda_runtime.h>
 #include "cutil_math.h"
 
@@ -91,6 +93,44 @@ inline float3 __host__ __device__ octaFold(float3 pos)
 	if (p.x - p.y < 0){ float tmp = p.y; p.y = p.x; p.x = tmp; }
 	if (p.x - p.z < 0){ float tmp = p.z; p.z = p.x; p.x = tmp; }
 	if (p.y - p.z < 0){ float tmp = p.z; p.z = p.y; p.y = tmp; }
+	return p;
+}
+
+inline float3 __host__ __device__ dodecaFold(float3 pos) 
+{
+	float3 p = fabs(pos);
+	
+	float3 n1 = normalize(make_float3(PHI * PHI, 1.0f, -PHI));
+	float3 n2 = normalize(make_float3(-PHI, PHI * PHI, 1.0f));
+	float3 n3 = normalize(make_float3(1.0f, -PHI, PHI * PHI));
+	float3 n4 = normalize(make_float3(-PHI * (1 + PHI), PHI * PHI - 1, 1 + PHI));
+	float3 n5 = normalize(make_float3(1 + PHI, -PHI * (1 + PHI), PHI * PHI - 1));
+
+	if (dot(p, n1) < 0) p = reflect(p, n1);
+	if (dot(p, n2) < 0) p = reflect(p, n2);
+	if (dot(p, n3) < 0) p = reflect(p, n3);
+	if (dot(p, n4) < 0) p = reflect(p, n4);
+	if (dot(p, n5) < 0) p = reflect(p, n5);
+	
+	return p;
+}
+
+inline float3 __host__ __device__ icosaFold(float3 pos) 
+{
+	float3 p = fabs(pos);
+
+	float3 n1 = normalize(make_float3(1.0f - PHI, -1.0f, PHI));
+	float3 n2 = normalize(make_float3(-PHI, PHI - 1.0f, 1.0f));
+	float3 n3 = normalize(make_float3(-PHI, PHI - 1.0f, -1.0f));
+	float3 n4 = normalize(make_float3(1.0f - PHI, -1.0f, PHI));
+	float3 n5 = normalize(make_float3(0, -1, 0));
+
+	if (dot(p, n1) < 0) p = reflect(p, n1);
+	if (dot(p, n2) < 0) p = reflect(p, n2);
+	if (dot(p, n3) < 0) p = reflect(p, n3);
+	if (dot(p, n4) < 0) p = reflect(p, n4);
+	if (dot(p, n5) < 0) p = reflect(p, n5);
+
 	return p;
 }
 
@@ -188,16 +228,10 @@ inline float __host__ __device__ mengerScene(float3 pos, int iterations)
 
 inline float __host__ __device__ testFractalScene(float3 pos, float time) 
 {
-	//float3 p = boxFold(pos, make_float3(0.5f, 0.5f, .5f));
-	//float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));
-	float3 p = boxFold(sphereFold(pos, 1.0f + time * 0.75f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));
-	p = tetraFold(p);
-	p = octaFold(p);
-	
-	//p = halfTetraFold(p);
-	//return sdfSphere(p, 0.6f);
-	//return sdfUnion(mengerBox(p, 5), sdfPlane(pos - make_float3(0, -1.25f, 0), make_float3(0, 1, 0)));
-	return sdfUnion(mengerBox(p / make_float3(1.0f, 1.6f, 1.15f), 6), sdfPlane(pos - make_float3(0, -1.25f, 0), make_float3(0, 1, 0)));
+	//float3 p = icosaFold(pos);
+	float3 p = dodecaFold(pos);
+	//float3 p = dodecaFold(pos) * (1.0f - time) + time * icosaFold(pos);
+	return sdfUnion(mengerBox(p, 5), sdfPlane(pos - make_float3(0, -1.25f, 0), make_float3(0, 1, 0)));
 }
 
 inline float __host__ __device__ mandelbulbScene(const float3& pos, float time) 
