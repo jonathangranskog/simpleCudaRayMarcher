@@ -2,6 +2,7 @@
 #define __SDF_UTIL__
 
 #define PHI ((1.0f + sqrtf(5)) / 2.0f)
+#define M_PI 3.14159265359
 
 #include <cuda_runtime.h>
 #include "cutil_math.h"
@@ -54,6 +55,29 @@ inline float __host__ __device__ sdfBox(float3 pos, float3 dim)
 {
 	float3 d = fabs(pos) - dim;
 	return min(max(d.x, max(d.y, d.z)), 0.0f) + length(fmaxf(d, make_float3(0.0f)));
+}
+
+inline float3 __host__ __device__ rotate(float3 pos, float3 axis, float angle) 
+{
+	// https://en.wikipedia.org/wiki/Rotation_matrix#Rotation_matrix_from_axis_and_angle
+	float3 c1 = make_float3(
+		cos(angle) + axis.x * axis.x * (1 - cos(angle)),
+		axis.x * axis.y * (1 - cos(angle)) + axis.z * sin(angle),
+		axis.z * axis.x * (1 - cos(angle)) - axis.y * sin(angle));
+	float3 c2 = make_float3(
+		axis.x * axis.y * (1 - cos(angle)) - axis.z * sin(angle),
+		cos(angle) + axis.y * axis.y * (1 - cos(angle)),
+		axis.z * axis.y * (1 - cos(angle)) + axis.x * sin(angle));
+	float3 c3 = make_float3(
+		axis.x * axis.z * (1 - cos(angle)) + axis.y * sin(angle),
+		axis.y * axis.z * (1 - cos(angle)) - axis.x * sin(angle),
+		cos(angle) + axis.z * axis.z * (1 - cos(angle)));
+
+	float3 p = make_float3(c1.x * pos.x + c2.x * pos.y + c3.x * pos.z,
+		c1.y * pos.x + c2.y * pos.y + c3.y * pos.z,
+		c1.z * pos.x + c2.z * pos.y + c3.z * pos.z);
+
+	return p;
 }
 
 inline float3 __host__ __device__ boxFold(float3 pos, float3 dim) 
@@ -134,7 +158,7 @@ inline float3 __host__ __device__ icosaFold(float3 pos)
 	return p;
 }
 
-inline float __host__ __device__ mandelbulb(float3 pos, int iterations, float bail, float power)
+inline float __host__ __device__ mandelbulb(float3 pos, int iterations, float bail, float power, float time = 1.0f)
 {
 	// http://iquilezles.org/www/articles/mandelbulb/mandelbulb.htm
 	float3 z = pos;
@@ -162,7 +186,7 @@ inline float __host__ __device__ mandelbulb(float3 pos, int iterations, float ba
 	return 0.5f*log(r)*r / dr;
 }
 
-inline float3 __host__ __device__ mandelbulbColor(float3 pos, int iterations, float bail, float power)
+inline float3 __host__ __device__ mandelbulbColor(float3 pos, int iterations, float bail, float power, float time = 1.0f)
 {
 	float3 color = make_float3(1, 0, 1);
 
@@ -201,14 +225,17 @@ inline float __host__ __device__ mengerCross(float3 pos)
 	return sdfUnion(sdfUnion(a, b), c);
 }
 
-inline float __host__ __device__ mengerBox(float3 pos, int iterations) 
+inline float __host__ __device__ mengerBox(float3 pos, int iterations, float time = 1.0f) 
 {
+	float3 p = pos;
 	// http://iquilezles.org/www/articles/menger/menger.htm
-	float main = sdfBox(pos, make_float3(1.0f));
+	float main = sdfBox(p, make_float3(1.0f));
 	float scale = 1.0f;
+
+	
 	for (int i = 0; i < iterations; i++)
 	{
-		float3 a = mmod(pos * scale, 2.0f) - 1.0f;
+		float3 a = mmod(p * scale, 2.0f) - 1.0f;
 		scale *= 3.0f;
 		float3 r = 1.0f - 3.0f * fabs(a);
 		float c = mengerCross(r) / scale;
@@ -229,20 +256,21 @@ inline float __host__ __device__ mengerScene(float3 pos, int iterations)
 inline float __host__ __device__ testFractalScene(float3 pos, float time) 
 {
 	//float3 p = icosaFold(pos);
-	float3 p = dodecaFold(pos);
+	//float3 p = rotate(pos, make_float3(0, 1, 0), M_PI * time * 2);
 	//float3 p = dodecaFold(pos) * (1.0f - time) + time * icosaFold(pos);
-	return sdfUnion(mengerBox(p, 5), sdfPlane(pos - make_float3(0, -1.25f, 0), make_float3(0, 1, 0)));
+	return sdfUnion(mengerBox(pos, 5, time), sdfPlane(pos - make_float3(0, -1.25f, 0), make_float3(0, 1, 0)));
 }
 
 inline float __host__ __device__ mandelbulbScene(const float3& pos, float time) 
 {
 	//float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));;
 	//p = octaFold(p);
-	float mb = mandelbulb(pos / 2.3f, 8, 4, 1.0f + 9.0f * time) * 2.3f;
+	float3 p = dodecaFold(pos);
+	float mb = mandelbulb(p / 2.3f, 8, 4, 1.0f + 9.0f * time) * 2.3f;
 	return mb;
 }
 
-inline float3 __host__ __device__ mandelbulbColor(const float3& pos, float time)
+inline float3 __host__ __device__ mandelbulbSceneColor(const float3& pos, float time)
 {
 	//float3 p = boxFold(sphereFold(pos, 1.3f, 1.0f), make_float3(0.15f, 0.15f, 0.15f));;
 	//p = octaFold(p);

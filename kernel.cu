@@ -16,7 +16,6 @@
 #define EPS 1e-5
 #define MINDIST 1.8e-3
 #define PUSH MINDIST*2
-#define M_PI 3.14159265359
 #define FRAMES 1
 
 // Purely random pixel sample
@@ -92,7 +91,7 @@ float __device__ DE(const float3& pos, float time)
 float3 __device__ sceneColor(const float3& pos, float time) 
 {
 	return make_float3(0.85f);
-	//return mandelbulbColor(pos, time);
+	//return mandelbulbSceneColor(pos, time);
 	//return sphereColor(pos);
 	//return cornellBoxColor(pos);
 }
