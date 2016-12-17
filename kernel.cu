@@ -12,7 +12,7 @@
 
 #define BLOCK_SIZE 8
 #define BOUNCES 2
-#define SAMPLES 2 // Total number of samples is SAMPLES*SAMPLES
+#define SAMPLES 1 // Total number of samples is SAMPLES*SAMPLES
 #define EPS 1e-5
 #define MINDIST 1.8e-3
 #define PUSH MINDIST*2
@@ -138,7 +138,7 @@ __device__ Hit march(const float3& orig, const float3& direction, float time)
 }
 
 // Path tracing function
-__device__ float3 trace(const float3& orig, const float3& direction, curandState* state, float time)
+__device__ float4 trace(const float3& orig, const float3& direction, curandState* state, float time)
 {
 	float raylen = length(direction);
 	float3 dir = direction;
@@ -161,7 +161,7 @@ __device__ float3 trace(const float3& orig, const float3& direction, curandState
 			// Fire new ray if there are bounces left
 			if (i < BOUNCES) rayhit = march(o, dir, time);
 		}
-		else if (i == 0) return make_float3(0.0f); // black background
+		else if (i == 0) return make_float4(make_float3(0.0f), 0.0f); // black background
 		else 
 		{
 			color += make_float3(1.0f) * mask; // add color when light (sky) is hit
@@ -169,7 +169,7 @@ __device__ float3 trace(const float3& orig, const float3& direction, curandState
 		}
 	}
 	
-	return color;
+	return make_float4(color, 1.0f);
 }
 
 __global__ void render(int width, int height, float* result, Camera cam, unsigned long long seed, float time)
@@ -178,7 +178,7 @@ __global__ void render(int width, int height, float* result, Camera cam, unsigne
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	if (x >= width || y >= height) return;
 
-	float3 color = make_float3(0.0f);
+	float4 color = make_float4(0.0f);
 
 	int block = blockIdx.x + blockIdx.y * gridDim.x;
 	unsigned long long idx = block * (blockDim.x * blockDim.y) + (threadIdx.y * blockDim.x) + threadIdx.x;
@@ -202,9 +202,10 @@ __global__ void render(int width, int height, float* result, Camera cam, unsigne
 	
 	color /= (SAMPLES * SAMPLES);
 
-	result[x * 3 + 3 * y * width + 0] = color.x;
-	result[x * 3 + 3 * y * width + 1] = color.y;
-	result[x * 3 + 3 * y * width + 2] = color.z;
+	result[x * 4 + 4 * y * width + 0] = color.x;
+	result[x * 4 + 4 * y * width + 1] = color.y;
+	result[x * 4 + 4 * y * width + 2] = color.z;
+	result[x * 4 + 4 * y * width + 3] = color.w;
 }
 
 void saveImage(std::string path, int width, int height, const float colors[]) 
@@ -213,10 +214,10 @@ void saveImage(std::string path, int width, int height, const float colors[])
 	output.resize(4 * width * height);
 	for (int i = 0; i < width * height; i++)
 	{
-		output[i * 4 + 0] = static_cast<unsigned char>(std::fmax(std::fmin(colors[i * 3 + 0] * 255, 255), 0));
-		output[i * 4 + 1] = static_cast<unsigned char>(std::fmax(std::fmin(colors[i * 3 + 1] * 255, 255), 0));
-		output[i * 4 + 2] = static_cast<unsigned char>(std::fmax(std::fmin(colors[i * 3 + 2] * 255, 255), 0));
-		output[i * 4 + 3] = 255;
+		output[i * 4 + 0] = static_cast<unsigned char>(std::fmax(std::fmin(colors[i * 4 + 0] * 255, 255), 0));
+		output[i * 4 + 1] = static_cast<unsigned char>(std::fmax(std::fmin(colors[i * 4 + 1] * 255, 255), 0));
+		output[i * 4 + 2] = static_cast<unsigned char>(std::fmax(std::fmin(colors[i * 4 + 2] * 255, 255), 0));
+		output[i * 4 + 3] = static_cast<unsigned char>(std::fmax(std::fmin(colors[i * 4 + 3] * 255, 255), 0));
 	}
 	unsigned error = lodepng::encode(path, output, width, height);
 	if (error) std::cout << "An error occurred: " << lodepng_error_text(error) << std::endl;
@@ -239,7 +240,7 @@ int main()
 
 	for (int i = 0; i < FRAMES; i++) {
 		float *deviceImage;
-		cudaMalloc(&deviceImage, 3 * width * height * sizeof(float));
+		cudaMalloc(&deviceImage, 4 * width * height * sizeof(float));
 		
 		unsigned long long seed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		
@@ -248,8 +249,8 @@ int main()
 
 		render << <blocks, threads >> >(width, height, deviceImage, cam, seed, t);
 		
-		float *hostImage = (float*)malloc(3 * width * height * sizeof(float));
-		cudaMemcpy(hostImage, deviceImage, 3 * width * height * sizeof(float), cudaMemcpyDeviceToHost);
+		float *hostImage = (float*)malloc(4 * width * height * sizeof(float));
+		cudaMemcpy(hostImage, deviceImage, 4 * width * height * sizeof(float), cudaMemcpyDeviceToHost);
 		std::string imageName = "renders/render_" + std::to_string(i + 1) + ".png";
 		saveImage(imageName, width, height, hostImage);
 		cudaFree(deviceImage);
