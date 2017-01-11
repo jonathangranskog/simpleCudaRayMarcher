@@ -16,7 +16,7 @@
 #define EPS 1e-5
 #define MINDIST 1.8e-3
 #define PUSH MINDIST*2
-#define FRAMES 1
+#define FRAMES 25
 
 // Purely random pixel sample
 inline float2 __device__ getRandomSample(curandState* state) 
@@ -71,7 +71,7 @@ struct Camera
 {
 	float3 pos;
 	float3 dir;
-	float halffov;
+	float invhalffov;
 	float maxdist = 10.0f;
 	float3 up;
 	float3 side;
@@ -195,7 +195,7 @@ __global__ void render(int width, int height, float* result, Camera cam, unsigne
 		float nx = (sample.x / float(width) - 0.5f) * 2.0f;
 		float ny = -(sample.y / float(height) - 0.5f) * 2.0f;
 		ny *= float(height) / float(width);
-		float3 raydir = normalize(cam.side * cam.halffov * nx + cam.up * ny * cam.halffov + cam.dir);
+		float3 raydir = normalize(cam.side * nx + cam.up * ny + cam.dir * cam.invhalffov);
 		color += trace(cam.pos, raydir * cam.maxdist, &state, time);
 	}
 	
@@ -235,7 +235,7 @@ int main()
 	cam.side = normalize(cross(cam.dir, make_float3(0, 1, 0)));
 	cam.up = normalize(cross(cam.side, cam.dir));
 	float fov = 128.0f / 180.0f * float(M_PI);
-	cam.halffov = std::tan(fov / 2.0f);
+	cam.invhalffov = 1.0f / std::tan(fov / 2.0f);
 
 	for (int i = 0; i < FRAMES; i++) {
 		float *deviceImage;
