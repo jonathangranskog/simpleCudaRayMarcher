@@ -81,11 +81,11 @@ struct Camera
 // Distance estimation function
 float __device__ DE(const float3& pos, float time) 
 {
-	//return mandelbulbScene(pos, time);
+	return mandelbulbScene(pos, time);
 	//return sphereScene(pos);
 	//return cornellBoxScene(pos);
 	//return mengerScene(pos, 6);
-	return testFractalScene(pos, time);
+	//return testFractalScene(pos, time);
 }
 
 float3 __device__ sceneColor(const float3& pos, float time) 
@@ -114,10 +114,10 @@ __device__ Hit march(const float3& orig, const float3& direction, float time)
 		if (t < MINDIST) 
 		{
 			// Calculate gradient (normal)
-			float fx = (DE(make_float3(pos.x + EPS, pos.y, pos.z), time) - DE(make_float3(pos.x - EPS, pos.y, pos.z), time)) / (2.0f * EPS);
-			float fy = (DE(make_float3(pos.x, pos.y + EPS, pos.z), time) - DE(make_float3(pos.x, pos.y - EPS, pos.z), time)) / (2.0f * EPS);
-			float fz = (DE(make_float3(pos.x, pos.y, pos.z + EPS), time) - DE(make_float3(pos.x, pos.y, pos.z - EPS), time)) / (2.0f * EPS);
-			float3 normal = normalize(make_float3(fx - t, fy - t, fz - t));
+			float fx = (DE(make_float3(pos.x + EPS, pos.y, pos.z), time) - DE(make_float3(pos.x - EPS, pos.y, pos.z), time));
+			float fy = (DE(make_float3(pos.x, pos.y + EPS, pos.z), time) - DE(make_float3(pos.x, pos.y - EPS, pos.z), time));
+			float fz = (DE(make_float3(pos.x, pos.y, pos.z + EPS), time) - DE(make_float3(pos.x, pos.y, pos.z - EPS), time));
+			float3 normal = normalize(make_float3(fx, fy, fz));
 			// faceforward
 			if (dot(-dir, normal) < 0) normal = -normal;
 
@@ -195,8 +195,7 @@ __global__ void render(int width, int height, float* result, Camera cam, unsigne
 		float nx = (sample.x / float(width) - 0.5f) * 2.0f;
 		float ny = -(sample.y / float(height) - 0.5f) * 2.0f;
 		ny *= float(height) / float(width);
-		float3 pt = cam.pos + cam.side * cam.halffov * nx + cam.up * ny * cam.halffov + cam.dir;
-		float3 raydir = normalize(pt - cam.pos);
+		float3 raydir = normalize(cam.side * cam.halffov * nx + cam.up * ny * cam.halffov + cam.dir);
 		color += trace(cam.pos, raydir * cam.maxdist, &state, time);
 	}
 	
